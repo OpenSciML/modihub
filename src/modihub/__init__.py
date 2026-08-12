@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from modihub!")
+"""MODIHUB public package metadata."""
+
+__version__ = "1.0.2"

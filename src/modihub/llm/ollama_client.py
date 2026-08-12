@@ -1,4 +1,5 @@
-import typing
+from collections.abc import Sequence
+from typing import Any
 
 import ollama
 import tenacity
@@ -9,38 +10,46 @@ from modihub.utils import ImageUtils
 
 
 class OllamaClient(LLMClient):
-    """
-    A client class for interacting with locally hosted Ollama LLMs.
+    """Asynchronous client wrapper for locally hosted Ollama models.
 
-    Supports multimodal inputs (text and images) and provides retry logic for robustness.
+    Args:
+        model_name: Ollama model identifier to use for chat requests.
+        args: Positional arguments forwarded to `ollama.AsyncClient`.
+        kwargs: Keyword arguments forwarded to `ollama.AsyncClient`.
+
+    Attributes:
+        system_instruction: Optional system prompt prepended to each request.
+        api_client: Asynchronous Ollama client.
     """
 
-    def __init__(self, model_name: str, *args, **kwargs) -> None:
-        """
-        Initialize the OllamaClient.
+    def __init__(self, model_name: str, *args: Any, **kwargs: Any) -> None:
+        """Initialize the Ollama client.
 
         Args:
-            model_name (str): The name of the model to interact with.
-            system_instruction (str, optional): An optional system prompt for context.
+            model_name: Ollama model identifier to use for chat requests.
+            args: Positional arguments forwarded to `ollama.AsyncClient`.
+            kwargs: Keyword arguments forwarded to `ollama.AsyncClient`.
         """
         super().__init__(model_name)
         self.system_instruction = kwargs.pop("system_instruction", "")
         self.api_client = OllamaClient.get_api_client(*args, **kwargs)
 
     @staticmethod
-    def get_api_client(*args, **kwargs) -> ollama.Client:
-        """
-        Initializes and returns the Ollama API client.
+    def get_api_client(*args: Any, **kwargs: Any) -> ollama.AsyncClient:
+        """Create an asynchronous Ollama API client.
+
+        Args:
+            args: Positional arguments forwarded to `ollama.AsyncClient`.
+            kwargs: Keyword arguments forwarded to `ollama.AsyncClient`.
 
         Returns:
-            ollama.Client: The Ollama API client instance.
+            Asynchronous Ollama API client.
         """
-        return ollama.Client(*args, **kwargs)
+        return ollama.AsyncClient(*args, **kwargs)
 
     @staticmethod
-    def _normalized_prompt_content(prompt: typing.Any) -> dict:
-        """
-        Normalizes the prompt to a message dictionary expected by Ollama.
+    def _normalized_prompt_content(prompt: Any) -> dict[str, Any]:
+        """Normalize the prompt to an Ollama message dictionary.
 
         Supports:
             - Single string prompt
@@ -48,10 +57,10 @@ class OllamaClient(LLMClient):
             - List of mixed strings and PIL Images
 
         Args:
-            prompt (Any): The prompt input to normalize.
+            prompt: String, PIL image, or mixed list prompt.
 
         Returns:
-            dict: A message dict with role, content, and optionally images.
+            Message dictionary with role, content, and optionally images.
 
         Raises:
             ValueError: If the input type is not supported.
@@ -78,28 +87,26 @@ class OllamaClient(LLMClient):
         raise ValueError("Unsupported prompt type")
 
     @tenacity.retry(wait=tenacity.wait_fixed(2), stop=tenacity.stop_after_attempt(3), reraise=True)
-    def generate(self, prompt: typing.Any, *args, **kwargs) -> str:
-        """
-        Generates a response from the Ollama model.
+    async def generate(self, prompt: Any, *args: Any, **kwargs: Any) -> str:
+        """Generate a response from the Ollama model.
 
         Args:
-            prompt (Any): Prompt content; can be string, PIL image, or a list of both.
+            prompt: Prompt content; can be a string, PIL image, or list of both.
+            args: Reserved positional generation arguments.
+            kwargs: Ollama chat request options.
 
         Returns:
-            str: The response content from the model.
+            Response content from the model.
         """
-        # Prepare the message queue with optional system instruction
         messages_queue = (
             [{"role": "system", "content": self.system_instruction}]
             if self.system_instruction
             else []
         )
-        # Append normalized user message
         normalized_prompt = self._normalized_prompt_content(prompt)
         messages_queue.append(normalized_prompt)
 
-        # Call the model
-        response = self.api_client.chat(
+        response = await self.api_client.chat(
             model=self.model_name,
             messages=messages_queue,
             **kwargs
@@ -109,15 +116,18 @@ class OllamaClient(LLMClient):
         return ai_message.get("content", "")
 
     @staticmethod
-    def list_models(*args, **kwargs) -> typing.List[LLMSchema]:
-        """
-        Lists all available models from the local Ollama server.
+    async def list_models(*args: Any, **kwargs: Any) -> Sequence[LLMSchema]:
+        """List all available models from the local Ollama server.
+
+        Args:
+            args: Positional arguments forwarded to the client.
+            kwargs: Keyword arguments forwarded to the client.
 
         Returns:
-            List[LLMSchema]: List of models wrapped in LLMSchema format.
+            Sequence of Ollama model metadata.
         """
         api_client = OllamaClient.get_api_client(*args, **kwargs)
-        ollama_models = api_client.list()
+        ollama_models = await api_client.list()
         return [
             LLMSchema(
                 name=model_info["model"],
@@ -128,17 +138,19 @@ class OllamaClient(LLMClient):
         ]
 
 
-# Example usage
 if __name__ == '__main__':
-    # List all available models
-    print("Available Ollama Models:")
-    for model in OllamaClient.list_models():
-        print(f"- {model.name}")
+    import asyncio
 
-    # Create an instance of the OllamaClient
-    client = OllamaClient.get_model("llama3.1:latest", system_instruction="Generate the output in markdown format")
+    async def main() -> None:
+        """Run a small manual Ollama smoke test."""
+        print("Available Ollama Models:")
+        for model in await OllamaClient.list_models():
+            print(f"- {model.name}")
 
-    # Generate a response from the model
-    response = client.generate("Who are you?")
-    print("\nModel Response:\n")
-    print(response)
+        client = OllamaClient.get_model("llama3.1:latest", system_instruction="Generate the output in markdown format")
+
+        response = await client.generate("Who are you?")
+        print("\nModel Response:\n")
+        print(response)
+
+    asyncio.run(main())

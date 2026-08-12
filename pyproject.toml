@@ -1,8 +1,9 @@
 [project]
 name = "modihub"
-version = "1.0.1"
+version = "1.0.2"
 description = "A Unified Interface for Diverse LLMs"
 readme = "README.md"
+license = { file = "LICENSE" }
 authors = [
     { name = "haruiz", email = "henryruiz22@gmail.com" } 
 ]
@@ -20,6 +21,12 @@ dependencies = [
     "tenacity>=9.0.0",
 ]
 
+[dependency-groups]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -29,6 +36,7 @@ build-backend = "hatchling.build"
 exclude = [
     "tests/",
     "docs/",
+    "mkdocs/",
     "examples/",
     "assets/",
     "keys/",
@@ -66,4 +74,3 @@ exclude = [
     ".python-version"
 
 ]
-

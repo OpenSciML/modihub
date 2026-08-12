@@ -1,51 +1,56 @@
-import typing
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import asyncio
 
-# Assuming Metric and LLMClient classes are defined elsewhere
-from modihub.metrics import Metric  # Update 'your_module' to the correct module name
 from modihub.llm import LLM, LLMClient
-class Evaluator:
-    """
-    Evaluator class for benchmarking multiple models on a given prompt using a list of metrics.
-    """
-    def __init__(self, models: typing.List[str], metrics: typing.List[Metric]):
-        """
-        Initializes the Evaluator with a list of model names and evaluation metrics.
+from modihub.metrics import Metric
 
-        :param models: List of model identifiers (e.g., names or keys)
-        :param metrics: List of Metric instances used to evaluate model output
+class Evaluator:
+    """Benchmark multiple asynchronous model clients with text metrics.
+
+    Args:
+        models: Provider model names to evaluate.
+        metrics: Metric instances used to score each model output.
+
+    Attributes:
+        models: Provider model names to evaluate.
+        metrics: Metric instances used to score each model output.
+    """
+
+    def __init__(self, models: list[str], metrics: list[Metric]) -> None:
+        """Initialize the evaluator.
+
+        Args:
+            models: Provider model names to evaluate.
+            metrics: Metric instances used to score each model output.
         """
         self.models = models
         self.metrics = metrics
 
-    def evaluate(self, prompt: str) -> typing.List[typing.Dict[str, float]]:
+    async def evaluate(self, prompt: str) -> list[dict[str, float]]:
+        """Evaluate all configured models on a prompt.
+
+        Args:
+            prompt: Text prompt to send to each model.
+
+        Returns:
+            List of metric score dictionaries in the same order as `self.models`.
         """
-        Evaluate all models on the given prompt.
+        clients = await asyncio.gather(*(LLM.create(model) for model in self.models))
+        return await asyncio.gather(
+            *(self._evaluate_model(client, prompt) for client in clients)
+        )
 
-        :param prompt: Text prompt to evaluate
-        :return: List of dictionaries, each containing metric scores for a model
+    async def _evaluate_model(self, model: LLMClient, prompt: str) -> dict[str, float]:
+        """Evaluate a single model output using all configured metrics.
+
+        Args:
+            model: Asynchronous model client to evaluate.
+            prompt: Text prompt for the model to answer.
+
+        Returns:
+            Mapping from metric class name to score.
         """
-        def evaluate_model(model: LLMClient, prompt: str) -> typing.Dict[str, float]:
-            """
-            Evaluate a single model's output using all metrics.
-
-            :param model: An instance of LLMClient
-            :param prompt: Text prompt for the model to respond to
-            :return: Dictionary of metric name to score
-            """
-            output = model(prompt)
-            return {
-                metric.__class__.__name__: metric(output)
-                for metric in self.metrics
-            }
-
-        results = []
-        with ThreadPoolExecutor() as executor:
-            futures = {
-                executor.submit(evaluate_model, LLM.create(model), prompt): model
-                for model in self.models
-            }
-            for future in as_completed(futures):
-                results.append(future.result())
-
-        return results
+        output = await model(prompt)
+        return {
+            metric.__class__.__name__: metric(output)
+            for metric in self.metrics
+        }

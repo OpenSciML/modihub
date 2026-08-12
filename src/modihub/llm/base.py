@@ -1,10 +1,17 @@
-import typing
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, Field
 
+ClientT = TypeVar("ClientT", bound="LLMClient")
+
 
 class LLMSchema(BaseModel):
+    """Metadata describing a model exposed by a provider client."""
+
     client: str = Field(
         ..., title="Client Name", description="The name of the client that provides the model"
     )
@@ -14,30 +21,63 @@ class LLMSchema(BaseModel):
     display_name: str = Field(
         ..., title="Display Name", description="The display name of the model"
     )
-    description: typing.Optional[str] = Field(
+    description: str | None = Field(
         default=None, title="Model Description", description="A description of the model"
     )
 
 
 
-# Abstract Base Class for LLM
 class LLMClient(ABC):
-    """Base class for all LLM clients."""
+    """Base class for asynchronous LLM clients.
 
-    def __init__(self, model_name: str, *args, **kwargs) -> None:
+    Args:
+        model_name: Provider-specific model identifier used for generation calls.
+        args: Positional arguments reserved for provider subclasses.
+        kwargs: Keyword arguments reserved for provider subclasses.
+
+    Attributes:
+        model_name: Provider-specific model identifier used by the client.
+    """
+
+    def __init__(self, model_name: str, *args: Any, **kwargs: Any) -> None:
+        """Initialize the client with the selected provider model.
+
+        Args:
+            model_name: Provider-specific model identifier used for generation calls.
+            args: Positional arguments accepted by subclass constructors.
+            kwargs: Keyword arguments accepted by subclass constructors.
+        """
         self.model_name = model_name
-        available_model_names = [m.name for m in self.list_models()]
-        if model_name not in available_model_names:
-            raise ValueError(
-                f"Model {model_name} not available. Available models: {available_model_names}"
-            )
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> LLMClient:
+        """Prevent direct construction outside the factory helpers.
+
+        Args:
+            args: Positional constructor arguments.
+            kwargs: Keyword constructor arguments.
+
+        Returns:
+            A newly allocated client instance when called through subclasses.
+
+        Raises:
+            TypeError: If callers instantiate a client class directly.
+        """
         raise TypeError("Direct instantiation is not allowed. Use 'get_model' method.")
 
     @classmethod
-    def get_model(cls, *args, **kwargs):
-        """Get a model instance."""
+    def get_model(cls: type[ClientT], *args: Any, **kwargs: Any) -> ClientT:
+        """Create a model instance without making network validation calls.
+
+        Args:
+            args: Positional constructor arguments passed to the subclass.
+            kwargs: Keyword constructor arguments passed to the subclass.
+
+        Returns:
+            Initialized provider client.
+
+        Raises:
+            TypeError: If called on a class that is not an `LLMClient` subclass.
+        """
         if not issubclass(cls, LLMClient):
             raise TypeError("Method can only be called on subclasses of LLM")
         instance = super().__new__(cls)
@@ -46,23 +86,37 @@ class LLMClient(ABC):
 
     @staticmethod
     @abstractmethod
-    def list_models() -> typing.List[LLMSchema]:
+    async def list_models() -> Sequence[LLMSchema]:
+        """List models available from the provider.
+
+        Returns:
+            Sequence of model metadata exposed by the provider.
         """
-        List available models.
-        :return:  List of available models
-        """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
-    def generate(self, prompt: typing.Any, *args, **kwargs) -> str:
-        """
-        Ask the model a question.
-        :param prompt:
-        :param args:
-        :param kwargs:
-        :return:
-        """
-        pass
+    async def generate(self, prompt: Any, *args: Any, **kwargs: Any) -> str:
+        """Generate a model response for a prompt.
 
-    def __call__(self, prompt: typing.Any, *args, **kwargs):
-        return self.generate(prompt, *args, **kwargs)
+        Args:
+            prompt: Provider-supported prompt payload.
+            args: Additional positional generation arguments.
+            kwargs: Additional provider-specific generation options.
+
+        Returns:
+            Generated text response.
+        """
+        raise NotImplementedError
+
+    async def __call__(self, prompt: Any, *args: Any, **kwargs: Any) -> str:
+        """Generate a response when the client is called directly.
+
+        Args:
+            prompt: Provider-supported prompt payload.
+            args: Additional positional generation arguments.
+            kwargs: Additional provider-specific generation options.
+
+        Returns:
+            Generated text response.
+        """
+        return await self.generate(prompt, *args, **kwargs)

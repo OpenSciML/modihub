@@ -1,3 +1,5 @@
+import asyncio
+
 from PIL import Image
 from dotenv import find_dotenv, load_dotenv
 
@@ -5,8 +7,9 @@ from modihub.llm import LLM
 
 load_dotenv(find_dotenv())
 
-if __name__ == "__main__":
-    available_models = LLM.available_models()
+async def main() -> None:
+    """List models and generate a multimodal response asynchronously."""
+    available_models = await LLM.available_models()
     for client, models in available_models.group_by("client"):
         for model in models:
             print(f"{client}: {model.name}")
@@ -14,9 +17,12 @@ if __name__ == "__main__":
     for model in available_models.filter_by("client", "openai"):
         print(model)
 
-    llm = LLM.create("models/gemini-1.5-flash-8b")
+    llm = await LLM.create("models/gemini-3.5-flash")
     image = Image.open("image.png")
     text = "Describe the following image"
     prompt = [text, image]
-    response = llm(prompt)
+    response = await llm(prompt)
     print(response)
+
+if __name__ == "__main__":
+    asyncio.run(main())
